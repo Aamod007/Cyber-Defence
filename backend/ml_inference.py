@@ -18,6 +18,9 @@ class MlResult:
 class ModelWrapper:
     def __init__(self, pipeline_path: Path):
         self._path = pipeline_path
+        # Try to download from remote if local file doesn't exist
+        if not pipeline_path.exists():
+            self._download_model(pipeline_path)
         self._model_data = self._load_model(pipeline_path)
         
         # Handle bundle format (new) vs pipeline format (old)
@@ -51,6 +54,25 @@ class ModelWrapper:
         
         print(f"[ML] Loaded {self._algorithm} model ({self._model_type} classification)")
 
+    def _download_model(self, path: Path) -> None:
+        """Download model from remote URL if not found locally."""
+        import os
+        model_url = os.getenv("SOC_MODEL_URL")
+        if not model_url:
+            print(f"[Model] File not found: {path}")
+            print("[Model] Set SOC_MODEL_URL environment variable to download from remote")
+            print("[Model] Using fallback mock model for demo purposes")
+            return  # Use fallback
+        
+        try:
+            print(f"[Model] Downloading from {model_url}...")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            urllib.request.urlretrieve(model_url, path)
+            print(f"[Model] Downloaded successfully to {path}")
+        except Exception as e:
+            print(f"[Model] Download failed: {e}")
+            print("[Model] Using fallback mock model for demo purposes")
+
     def _fix_imputer_dtype(self):
         """Fix SimpleImputer dtype issues from sklearn version mismatch."""
         try:
@@ -71,11 +93,33 @@ class ModelWrapper:
 
     @staticmethod
     def _load_model(path: Path) -> Any:
+        """Load model from file, return mock if not found."""
+        if not path.exists():
+            print(f"[Model] File not found: {path}, using mock model")
+            return ModelWrapper._create_mock_model()
+        
         try:
             import joblib
             return joblib.load(path)
-        except Exception:
-            import pickle
+        except Exception as e:
+            print(f"[Model] Failed to load {path}: {e}, using mock model")
+            return ModelWrapper._create_mock_model()
+    
+    @staticmethod
+    def _create_mock_model() -> Dict[str, Any]:
+        """Create a mock model for demo/testing purposes."""
+        return {
+            'model_type': 'binary',
+            'algorithm': 'MockModel',
+            'classes_binary': ['Normal', 'Attack'],
+            'classes_multiclass': [],
+            'feature_cols': [],
+            'preprocessor': None,
+            'rf_binary': None,
+            'rf_multiclass': None,
+            'pipeline': None,
+            'label_encoder': None,
+        }
             with path.open("rb") as f:
                 return pickle.load(f)
 
@@ -134,6 +178,21 @@ class ModelWrapper:
 
     def score_conn_features(self, features: Dict[str, Any]) -> MlResult:
         """Score features and return attack classification."""
+        
+        # Handle mock model (when real model not available)
+        if self._algorithm == 'MockModel':
+            import random
+            # Random demo predictions for testing
+            is_attack = random.random() > 0.7
+            confidence = random.uniform(0.5, 0.99) if is_attack else random.uniform(0.0, 0.3)
+            attack_types = ['DoS', 'Reconnaissance', 'Exploitation', 'Backdoor', 'Fuzzing']
+            pred_label = random.choice(attack_types) if is_attack else 'Normal'
+            return MlResult(
+                malicious_score=confidence,
+                predicted_label=pred_label,
+                model_mode='binary',
+                raw_class=pred_label
+            )
         
         try:
             import pandas as pd
