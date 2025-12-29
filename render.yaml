@@ -3,7 +3,10 @@ services:
     name: ids-attack-detection
     env: python
     plan: free
-    buildCommand: pip install -r backend/requirements.txt
+    buildCommand: |
+      git lfs install
+      git lfs pull
+      pip install -r backend/requirements.txt
     startCommand: python -m backend.server
     envVars:
       - key: SOC_LISTEN_HOST
